@@ -1,0 +1,151 @@
+/* RESET */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: sans-serif;
+}
+
+/* NAVBAR */
+.navbar {
+  height: 60px;
+  background: #ffffff;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 40px;
+  border-bottom: 1px solid #eee;
+}
+
+.logo {
+  display: flex;
+  gap: 8px;
+  font-weight: bold;
+  font-size: 18px;
+}
+
+.logo-name {
+  color: #1b6530;
+}
+
+.nav-links {
+  display: flex;
+  gap: 20px;
+}
+
+.nav-links a {
+  text-decoration: none;
+  color: #444;
+}
+
+.nav-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.btn-nav-out {
+  border: 1px solid #1b6530;
+  background: transparent;
+  padding: 6px 14px;
+  border-radius: 20px;
+}
+
+.btn-nav-fill {
+  background: #1b6530;
+  color: white;
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: none;
+}
+
+/* MAIN */
+.login-main {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: calc(100vh - 60px);
+}
+
+/* LEFT PANEL */
+.panel-photo {
+  position: relative;
+  background: url("https://images.unsplash.com/photo-1584515933487-779824d29309?w=900")
+    center/cover no-repeat;
+  color: white;
+  padding: 40px;
+}
+
+.photo-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.panel-content {
+  position: relative;
+  z-index: 2;
+}
+
+.panel-heading {
+  font-size: 36px;
+  margin-bottom: 10px;
+}
+
+.panel-sub {
+  margin-bottom: 20px;
+}
+
+.pills {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pill {
+  background: rgba(255, 255, 255, 0.2);
+  padding: 10px;
+  border-radius: 8px;
+}
+
+/* RIGHT PANEL */
+.panel-form {
+  background: #fdfcf8;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.form-wrap {
+  width: 300px;
+}
+
+.form-wrap h2 {
+  margin-bottom: 10px;
+}
+
+.form-wrap p {
+  margin-bottom: 20px;
+}
+
+.form-wrap input {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 12px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+}
+
+.form-options {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 15px;
+}
+
+.btn-primary {
+  width: 100%;
+  padding: 12px;
+  background: #1b6530;
+  color: white;
+  border: none;
+  border-radius: 25px;
+  cursor: pointer;
+}

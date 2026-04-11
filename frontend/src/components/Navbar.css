@@ -1,0 +1,167 @@
+/* ── GraamSehat Navbar — Juda Agency Style ── */
+
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap');
+
+.gs-nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 1000;
+  background: rgba(17, 18, 16, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.gs-nav-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 40px;
+  height: 68px;
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+
+/* Logo */
+.gs-nav-logo {
+  font-family: 'Syne', sans-serif;
+  font-size: 18px;
+  font-weight: 800;
+  color: #f5f5f0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  letter-spacing: -0.01em;
+  transition: opacity 0.2s;
+}
+.gs-nav-logo:hover { opacity: 0.8; }
+
+/* Links */
+.gs-nav-links {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+
+.gs-nav-link {
+  background: none;
+  border: none;
+  color: #888e7a;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 8px 14px;
+  border-radius: 100px;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+  letter-spacing: 0.01em;
+}
+.gs-nav-link:hover {
+  color: #f5f5f0;
+  background: rgba(255,255,255,0.07);
+}
+.gs-nav-link.active {
+  color: #c6f135;
+}
+
+/* Auth */
+.gs-nav-auth {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.gs-nav-user {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: #c6f135;
+}
+
+.gs-nav-btn-ghost {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.15);
+  color: #f5f5f0;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 18px;
+  border-radius: 100px;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+.gs-nav-btn-ghost:hover { border-color: rgba(255,255,255,0.4); }
+
+.gs-nav-btn-primary {
+  background: #c6f135;
+  color: #111210;
+  border: none;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px 20px;
+  border-radius: 100px;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+}
+.gs-nav-btn-primary:hover { background: #d4ff3a; transform: translateY(-1px); }
+
+.gs-nav-btn-outline {
+  background: transparent;
+  color: #ff6060;
+  border: 1px solid rgba(255, 96, 96, 0.35);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 20px;
+  border-radius: 100px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+.gs-nav-btn-outline:hover { background: rgba(255,96,96,0.1); border-color: #ff6060; }
+
+/* Hamburger */
+.gs-hamburger {
+  display: none;
+  flex-direction: column;
+  gap: 5px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  margin-left: auto;
+}
+.gs-hamburger span {
+  display: block;
+  width: 22px;
+  height: 2px;
+  background: #f5f5f0;
+  border-radius: 2px;
+  transition: opacity 0.2s;
+}
+
+/* ── RESPONSIVE ── */
+@media (max-width: 768px) {
+  .gs-nav-inner { padding: 0 20px; }
+
+  .gs-nav-links {
+    display: none;
+    position: absolute;
+    top: 68px; left: 0; right: 0;
+    background: rgba(17,18,16,0.97);
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    flex-direction: column;
+    padding: 16px 20px;
+    gap: 4px;
+  }
+  .gs-nav-links.open { display: flex; }
+  .gs-nav-link { width: 100%; text-align: left; border-radius: 10px; }
+
+  .gs-nav-auth { display: none; }
+  .gs-hamburger { display: flex; }
+}
