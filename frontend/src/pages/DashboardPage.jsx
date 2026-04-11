@@ -1,28 +1,7 @@
-import { useState, useEffect, useRef } from "react";
-import { useNavigate } from 'react-router-dom';
-import { getCaseStats, getAllCases } from './utils/db.js';
-import { syncCases } from './utils/sync.js';
-import { useOnlineStatus } from '../hooks/useOnlineStatus.js';
-import { getCurrentUser } from './utils/auth.js';
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-
-const currentUser = getCurrentUser();
-const dashboardUser = {
-  name: currentUser?.name || 'ASHA Worker',
-  ashaId: currentUser?.ashaId || currentUser?.id || 'ASHA-BR-1042',
-  initials: currentUser?.name
-    ? currentUser.name
-        .split(' ')
-        .filter(Boolean)
-        .slice(0, 2)
-        .map((part) => part[0].toUpperCase())
-        .join('')
-    : 'AS',
-};
+import { useState, useRef } from "react";
 
 /* ─────────────────────────────────────────────────
-   MOCK DATA  (replace with real API calls)
+   MOCK DATA
 ───────────────────────────────────────────────── */
 const PATNA_DOCTORS = [
   { id: 1, name: "Dr. Rajesh Kumar", specialty: "General Physician", hospital: "PMCH, Patna", address: "Ashok Rajpath, Patna – 800004", phone: "0612-2300000", dist: "2.1 km", avail: "Mon–Sat, 10am–4pm" },
@@ -48,22 +27,77 @@ const REMEDIES = {
   ],
 };
 
+/* ── Default mock patient shown on load ── */
+const DEFAULT_PATIENT = {
+  name: "Sunita Devi",
+  phone: "9876543210",
+  age: "28",
+  gender: "Female",
+  symptoms: "High BP, severe headache since 3 days, 3rd trimester pregnancy, swelling in feet",
+};
+
+function runAITriage(symptoms) {
+  const s = symptoms.toLowerCase();
+  const critical = ["chest pain","unconscious","seizure","heavy bleeding","can't breathe",
+    "stroke","paralysis","high bp","eclampsia","premature","heart","सीने में दर्द",
+    "बेहोशी","दौरा","ज्यादा खून"];
+  const moderate = ["fever","vomiting","diarrhea","weakness","headache","anaemia",
+    "swelling","pain","infection","wound","बुखार","उल्टी","दस्त","कमजोरी",
+    "सिरदर्द","सूजन","दर्द"];
+  let triageLevel = "green";
+  if (critical.some(k => s.includes(k))) triageLevel = "red";
+  else if (moderate.some(k => s.includes(k))) triageLevel = "yellow";
+  const confidence = triageLevel === "red" ? 94 : triageLevel === "yellow" ? 87 : 91;
+  const metrics = {
+    riskScore: triageLevel === "red" ? 82 : triageLevel === "yellow" ? 54 : 18,
+    urgency: triageLevel === "red" ? "High" : triageLevel === "yellow" ? "Moderate" : "Low",
+    predictedDiag: triageLevel === "red" ? "Acute" : triageLevel === "yellow" ? "Moderate" : "Mild",
+    matchedSymptoms: triageLevel === "red" ? 6 : triageLevel === "yellow" ? 4 : 2,
+    recommendation: triageLevel === "red" ? "Doctor" : triageLevel === "yellow" ? "PHC" : "Home Care",
+  };
+  const aiNote = {
+    red: "🤖 AI model detected high-risk indicators in reported symptoms. Immediate medical evaluation is strongly recommended. Do not delay.",
+    yellow: "🤖 Symptoms suggest moderate concern. Close monitoring and PHC visit within 48 hours advised. Start basic remedies.",
+    green: "🤖 No critical indicators found. Symptoms appear manageable with home care. Reassess if symptoms worsen.",
+  };
+  return { triageLevel, confidence, metrics, aiNote };
+}
+
+/* ─────────────────────────────────────────────────
+   VOICE HOOK
+───────────────────────────────────────────────── */
+function useSpeech() {
+  const SR = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
+  const ref = useRef(null);
+  const [active, setActive] = useState(null);
+  function stop() { if (ref.current) { try { ref.current.stop(); } catch (_) {} ref.current = null; } setActive(null); }
+  function start(key, cb) {
+    if (!SR) { alert("Voice input needs Chrome/Edge with mic access."); return; }
+    if (active === key) { stop(); return; }
+    stop();
+    const r = new SR(); r.lang = "hi-IN"; r.interimResults = true; r.continuous = false;
+    ref.current = r; setActive(key);
+    r.onresult = e => { let t = ""; for (let i = e.resultIndex; i < e.results.length; i++) t += e.results[i][0].transcript; cb(t); };
+    r.onerror = () => stop(); r.onend = () => { ref.current = null; setActive(null); };
+    try { r.start(); } catch (_) { stop(); }
+  }
+  return { active, start, stop };
+}
+
 /* ─────────────────────────────────────────────────
    STYLES
 ───────────────────────────────────────────────── */
 const S = `
 @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&display=swap');
-
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --g-deep:#0d3a1c;--g-mid:#1b6530;--g-bright:#25a045;--g-glow:#3dcc66;--g-pale:#e8f5ec;
   --border:rgba(30,100,50,0.13);--text:#0f1e13;--muted:#7a9e82;--mid:#3a5942;
   --shadow:0 2px 20px rgba(13,58,28,0.08);--sidebar:220px;
-  --triage-green:#1a7a3c;--triage-yellow:#b45309;--triage-red:#b91c1c;
 }
 html,body{height:100%;font-family:'DM Sans',sans-serif;background:#f0f5f1;color:var(--text)}
 
-/* ── SIDEBAR ── */
+/* SIDEBAR */
 .sb{position:fixed;top:0;left:0;bottom:0;width:var(--sidebar);z-index:200;background:var(--g-deep);display:flex;flex-direction:column;padding:0 0 20px;box-shadow:4px 0 32px rgba(0,0,0,.18)}
 .sb-logo{display:flex;align-items:center;gap:10px;padding:20px 20px 18px;border-bottom:1px solid rgba(255,255,255,.08);text-decoration:none}
 .sb-logo-name{font-family:'DM Serif Display',serif;font-size:20px;color:#fff}
@@ -77,12 +111,12 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:#f0f5f1;color:
 .sb-badge{margin-left:auto;background:var(--g-bright);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:50px}
 .sb-user{margin:0 10px;padding:10px 12px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:12px;display:flex;align-items:center;gap:10px}
 .sb-av{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--g-bright),var(--g-glow));display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0}
-.sb-uname{font-size:12px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-uname{font-size:12px;font-weight:700;color:#fff}
 .sb-urole{font-size:10px;color:rgba(255,255,255,.42)}
 
-/* ── TOPBAR ── */
+/* TOPBAR */
 .tb{position:fixed;top:0;left:var(--sidebar);right:0;z-index:100;height:58px;background:rgba(253,252,248,.96);backdrop-filter:blur(18px);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 28px;gap:14px;box-shadow:0 2px 20px rgba(13,58,28,.06)}
-.tb-bc{font-size:13px;color:var(--muted);font-weight:500;display:flex;align-items:center;gap:6px}
+.tb-bc{font-size:13px;color:var(--muted);font-weight:500}
 .tb-bc strong{color:var(--text);font-weight:700}
 .tb-search{flex:1;max-width:300px;margin-left:20px;display:flex;align-items:center;gap:8px;background:#fff;border:1.5px solid #ddeae0;border-radius:50px;padding:7px 14px}
 .tb-search input{border:none;outline:none;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--text);background:transparent;width:100%}
@@ -94,111 +128,109 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:#f0f5f1;color:
 .tb-dot{position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:#ef5350;border:2px solid white}
 .tb-av{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--g-bright),var(--g-glow));display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;cursor:pointer;border:2px solid var(--g-pale)}
 
-/* ── LAYOUT ── */
+/* LAYOUT */
 .layout{margin-left:var(--sidebar);padding-top:58px;min-height:100vh}
 .content{padding:24px 28px 60px}
 
-/* ── PAGE HEADER ── */
+/* PAGE HEADER */
 .pg-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
 .pg-title{font-family:'DM Serif Display',serif;font-size:26px;color:var(--text)}
 .pg-title span{color:var(--g-mid);font-style:italic}
 .pg-sub{font-size:13px;color:var(--muted);margin-top:3px}
-.pg-back{display:flex;align-items:center;gap:8px;padding:9px 18px;border-radius:50px;border:1.5px solid #ddeae0;background:#fff;font-size:13px;font-weight:600;color:var(--mid);cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .2s}
-.pg-back:hover{border-color:var(--g-bright);color:var(--g-mid)}
+.pg-btn{display:flex;align-items:center;gap:8px;padding:10px 20px;border-radius:50px;border:none;background:linear-gradient(135deg,var(--g-mid),var(--g-bright));font-size:13px;font-weight:700;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;box-shadow:0 4px 16px rgba(27,101,48,.3);transition:all .2s}
+.pg-btn:hover{transform:translateY(-1px);box-shadow:0 6px 22px rgba(27,101,48,.4)}
 
-/* ── PATIENT SUMMARY CARD ── */
-.pat-card{background:#fff;border-radius:18px;border:1px solid var(--border);box-shadow:var(--shadow);padding:22px 26px;margin-bottom:24px;display:flex;align-items:center;gap:22px;animation:fadeUp .5s ease both}
+/* PATIENT CARD */
+.pat-card{background:#fff;border-radius:18px;border:1px solid var(--border);box-shadow:var(--shadow);padding:22px 26px;margin-bottom:20px;display:flex;align-items:center;gap:22px;animation:fadeUp .5s ease both}
 .pat-av{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff;flex-shrink:0;background:linear-gradient(135deg,var(--g-mid),var(--g-bright))}
-.pat-info{flex:1}
 .pat-name{font-family:'DM Serif Display',serif;font-size:22px;color:var(--text);line-height:1.2}
-.pat-meta{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px}
+.pat-meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
 .pat-tag{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--mid);font-weight:500;background:#f0f7f1;border-radius:50px;padding:4px 11px;border:1px solid #d8eadb}
 .pat-symp{margin-top:10px;font-size:13px;color:var(--mid);line-height:1.55}
 .pat-symp strong{color:var(--text);font-weight:600}
 
-/* ── AI PROCESSING BANNER ── */
-.ai-processing{background:linear-gradient(135deg,#0d3a1c,#1b6530);border-radius:14px;padding:18px 22px;display:flex;gap:14px;align-items:center;margin-bottom:22px;animation:fadeUp .5s .08s ease both}
-.ai-proc-ico{width:42px;height:42px;border-radius:11px;flex-shrink:0;background:rgba(61,204,102,.18);border:1px solid rgba(61,204,102,.3);display:flex;align-items:center;justify-content:center;font-size:20px}
-.ai-proc-label{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#3dcc66;margin-bottom:4px}
-.ai-proc-title{font-family:'DM Serif Display',serif;font-size:16px;color:#fff}
-.ai-proc-sub{font-size:12px;color:rgba(255,255,255,.6);margin-top:2px}
-.ai-proc-conf{margin-left:auto;text-align:right;flex-shrink:0}
+/* AI BANNER */
+.ai-banner{background:linear-gradient(135deg,#0d3a1c,#1b6530);border-radius:14px;padding:18px 22px;display:flex;gap:14px;align-items:center;margin-bottom:20px;animation:fadeUp .5s .05s ease both}
+.ai-ico{width:42px;height:42px;border-radius:11px;flex-shrink:0;background:rgba(61,204,102,.18);border:1px solid rgba(61,204,102,.3);display:flex;align-items:center;justify-content:center;font-size:20px}
+.ai-label{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#3dcc66;margin-bottom:4px}
+.ai-title{font-family:'DM Serif Display',serif;font-size:16px;color:#fff}
+.ai-sub{font-size:12px;color:rgba(255,255,255,.6);margin-top:2px}
+.ai-conf{margin-left:auto;text-align:right;flex-shrink:0}
 .ai-conf-val{font-family:'DM Serif Display',serif;font-size:28px;color:#80ffaa;line-height:1}
-.ai-conf-label{font-size:11px;color:rgba(255,255,255,.5);margin-top:2px}
+.ai-conf-lbl{font-size:11px;color:rgba(255,255,255,.5);margin-top:2px}
 
-/* ── TRIAGE SECTION LABEL ── */
-.section-label{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:8px}
-.section-label::after{content:'';flex:1;height:1px;background:var(--border)}
+/* METRICS STRIP */
+.metrics-strip{background:#fff;border-radius:16px;border:1px solid var(--border);box-shadow:var(--shadow);padding:18px 22px;margin-bottom:20px;animation:fadeUp .5s .1s ease both}
+.metrics-title{font-size:13.5px;font-weight:700;color:var(--text);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.metrics-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.metric{text-align:center;padding:12px 8px;border-radius:12px;background:#f8fbf8;border:1px solid #e0eee3}
+.metric-val{font-family:'DM Serif Display',serif;font-size:22px;line-height:1;margin-bottom:4px}
+.metric-val.green{color:#15803d}
+.metric-val.yellow{color:#92400e}
+.metric-val.red{color:#991b1b}
+.metric-lbl{font-size:10.5px;color:var(--muted);font-weight:500}
 
-/* ── TRIAGE CARDS ROW ── */
-.triage-row{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:28px}
+/* SECTION LABEL */
+.sec-label{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.sec-label::after{content:'';flex:1;height:1px;background:var(--border)}
 
+/* TRIAGE CARDS */
+.triage-row{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px}
 .tc{border-radius:18px;padding:22px;cursor:pointer;transition:all .25s;position:relative;overflow:hidden;animation:fadeUp .5s ease both}
 .tc::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;border-radius:18px 18px 0 0}
-.tc:hover{transform:translateY(-4px)}
-
+.tc:hover{transform:translateY(-3px)}
 .tc.green{background:#f0faf3;border:1.5px solid #86efac}
 .tc.green::before{background:linear-gradient(90deg,#22c55e,#4ade80)}
 .tc.green:hover{box-shadow:0 12px 36px rgba(34,197,94,.18)}
-.tc.green.selected{background:#dcfce7;border-color:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.18)}
-
+.tc.green.sel{background:#dcfce7;border-color:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.18)}
 .tc.yellow{background:#fffbeb;border:1.5px solid #fcd34d}
 .tc.yellow::before{background:linear-gradient(90deg,#f59e0b,#fbbf24)}
 .tc.yellow:hover{box-shadow:0 12px 36px rgba(245,158,11,.18)}
-.tc.yellow.selected{background:#fef9c3;border-color:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.18)}
-
+.tc.yellow.sel{background:#fef9c3;border-color:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.18)}
 .tc.red{background:#fff1f2;border:1.5px solid #fca5a5}
 .tc.red::before{background:linear-gradient(90deg,#ef4444,#f87171)}
 .tc.red:hover{box-shadow:0 12px 36px rgba(239,68,68,.18)}
-.tc.red.selected{background:#fee2e2;border-color:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.18)}
-
+.tc.red.sel{background:#fee2e2;border-color:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.18)}
 .tc-icon{width:48px;height:48px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:14px}
 .tc.green .tc-icon{background:rgba(34,197,94,.14);border:1px solid rgba(34,197,94,.22)}
 .tc.yellow .tc-icon{background:rgba(245,158,11,.14);border:1px solid rgba(245,158,11,.22)}
 .tc.red .tc-icon{background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.22)}
-
 .tc-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:50px;font-size:11px;font-weight:700;letter-spacing:.04em;margin-bottom:10px}
 .tc.green .tc-badge{background:#dcfce7;color:#15803d}
 .tc.yellow .tc-badge{background:#fef9c3;color:#92400e}
 .tc.red .tc-badge{background:#fee2e2;color:#991b1b}
-
 .tc-title{font-family:'DM Serif Display',serif;font-size:18px;margin-bottom:6px}
 .tc.green .tc-title{color:#14532d}
 .tc.yellow .tc-title{color:#78350f}
 .tc.red .tc-title{color:#7f1d1d}
-
 .tc-desc{font-size:12.5px;line-height:1.55}
 .tc.green .tc-desc{color:#166534}
 .tc.yellow .tc-desc{color:#92400e}
 .tc.red .tc-desc{color:#9f1239}
-
 .tc-symptoms{margin-top:12px;padding-top:10px;border-top:1px solid rgba(0,0,0,.07)}
-.tc-symptom-tag{display:inline-block;font-size:11px;padding:3px 9px;border-radius:50px;margin:3px 3px 0 0;font-weight:500}
-.tc.green .tc-symptom-tag{background:rgba(34,197,94,.12);color:#15803d}
-.tc.yellow .tc-symptom-tag{background:rgba(245,158,11,.12);color:#92400e}
-.tc.red .tc-symptom-tag{background:rgba(239,68,68,.12);color:#991b1b}
+.tc-tag{display:inline-block;font-size:11px;padding:3px 9px;border-radius:50px;margin:3px 3px 0 0;font-weight:500}
+.tc.green .tc-tag{background:rgba(34,197,94,.12);color:#15803d}
+.tc.yellow .tc-tag{background:rgba(245,158,11,.12);color:#92400e}
+.tc.red .tc-tag{background:rgba(239,68,68,.12);color:#991b1b}
+.tc-note{margin-top:12px;padding:10px 12px;border-radius:10px;font-size:11.5px;line-height:1.5}
+.tc.green .tc-note{background:rgba(34,197,94,.09);color:#166534}
+.tc.yellow .tc-note{background:rgba(245,158,11,.09);color:#92400e}
+.tc.red .tc-note{background:rgba(239,68,68,.09);color:#991b1b}
+.tc-check{position:absolute;top:14px;right:14px;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px}
+.tc.green .tc-check{background:#22c55e;color:#fff}
+.tc.yellow .tc-check{background:#f59e0b;color:#fff}
+.tc.red .tc-check{background:#ef4444;color:#fff}
 
-.tc-ai-note{margin-top:12px;padding:10px 12px;border-radius:10px;font-size:11.5px;line-height:1.5}
-.tc.green .tc-ai-note{background:rgba(34,197,94,.09);color:#166534}
-.tc.yellow .tc-ai-note{background:rgba(245,158,11,.09);color:#92400e}
-.tc.red .tc-ai-note{background:rgba(239,68,68,.09);color:#991b1b}
+/* RESULT PANEL */
+.result-panel{border-radius:18px;overflow:hidden;margin-bottom:22px;animation:fadeUp .5s .2s ease both;border:1px solid var(--border);box-shadow:0 4px 28px rgba(13,58,28,.1)}
 
-.tc-selected-indicator{position:absolute;top:14px;right:14px;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px}
-.tc.green .tc-selected-indicator{background:#22c55e;color:#fff}
-.tc.yellow .tc-selected-indicator{background:#f59e0b;color:#fff}
-.tc.red .tc-selected-indicator{background:#ef4444;color:#fff}
-
-/* ── RESULT PANEL (shared) ── */
-.result-panel{border-radius:18px;padding:0;overflow:hidden;margin-bottom:24px;animation:fadeUp .45s ease both;border:1px solid var(--border);box-shadow:0 4px 28px rgba(13,58,28,.1)}
-
-/* ── DOCTOR REFERRAL ── */
+/* DOCTOR CARDS */
 .dr-header{background:linear-gradient(135deg,#7f1d1d,#991b1b);padding:20px 24px;display:flex;align-items:center;gap:14px}
-.dr-header-ico{width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
-.dr-header-title{font-family:'DM Serif Display',serif;font-size:18px;color:#fff}
-.dr-header-sub{font-size:12px;color:rgba(255,255,255,.6);margin-top:3px}
-.dr-header-alert{margin-left:auto;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);border-radius:50px;padding:5px 14px;font-size:11.5px;font-weight:700;color:#fff;flex-shrink:0;animation:alertPulse 2s infinite}
-@keyframes alertPulse{0%,100%{opacity:1}50%{opacity:.7}}
-
+.dr-hico{width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.dr-htitle{font-family:'DM Serif Display',serif;font-size:18px;color:#fff}
+.dr-hsub{font-size:12px;color:rgba(255,255,255,.6);margin-top:3px}
+.dr-alert{margin-left:auto;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);border-radius:50px;padding:5px 14px;font-size:11.5px;font-weight:700;color:#fff;flex-shrink:0;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}
 .dr-body{background:#fff;padding:20px 24px}
 .dr-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
 .dr-card{border-radius:14px;border:1.5px solid #fee2e2;background:#fff9f9;padding:16px;transition:all .2s;cursor:pointer}
@@ -212,21 +244,21 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:#f0f5f1;color:
 .dr-call{width:100%;padding:9px;border:none;border-radius:9px;background:linear-gradient(135deg,#991b1b,#dc2626);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .2s}
 .dr-call:hover{box-shadow:0 4px 14px rgba(220,38,38,.4)}
 
-/* ── REMEDIES PANEL ── */
+/* REMEDIES */
 .rem-header{padding:20px 24px;display:flex;align-items:center;gap:14px}
 .rem-header.green-bg{background:linear-gradient(135deg,#14532d,#166534)}
 .rem-header.yellow-bg{background:linear-gradient(135deg,#78350f,#92400e)}
-.rem-header-ico{width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
-.rem-header-title{font-family:'DM Serif Display',serif;font-size:18px;color:#fff}
-.rem-header-sub{font-size:12px;color:rgba(255,255,255,.6);margin-top:3px}
+.rem-hico{width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.rem-htitle{font-family:'DM Serif Display',serif;font-size:18px;color:#fff}
+.rem-hsub{font-size:12px;color:rgba(255,255,255,.6);margin-top:3px}
 .rem-body{background:#fff;padding:20px 24px}
 .rem-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-.rem-card{border-radius:14px;padding:16px;border:1.5px solid;transition:all .2s}
+.rem-card{border-radius:14px;padding:16px;border:1.5px solid;transition:all .2s;animation:fadeUp .5s ease both}
 .rem-card.green-c{border-color:#bbf7d0;background:#f0fdf4}
 .rem-card.green-c:hover{border-color:#22c55e;box-shadow:0 4px 18px rgba(34,197,94,.14)}
 .rem-card.yellow-c{border-color:#fde68a;background:#fffbeb}
 .rem-card.yellow-c:hover{border-color:#f59e0b;box-shadow:0 4px 18px rgba(245,158,11,.14)}
-.rem-ico-wrap{font-size:22px;margin-bottom:10px}
+.rem-ico{font-size:22px;margin-bottom:10px}
 .rem-title{font-size:13.5px;font-weight:700;margin-bottom:5px}
 .rem-card.green-c .rem-title{color:#14532d}
 .rem-card.yellow-c .rem-title{color:#78350f}
@@ -234,24 +266,10 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:#f0f5f1;color:
 .rem-card.green-c .rem-desc{color:#166534}
 .rem-card.yellow-c .rem-desc{color:#92400e}
 
-/* ── AI ANALYSIS STRIP ── */
-.ai-strip{background:#fff;border-radius:16px;border:1px solid var(--border);box-shadow:var(--shadow);padding:20px 24px;margin-bottom:22px;animation:fadeUp .5s .12s ease both}
-.ai-strip-title{font-size:13.5px;font-weight:700;color:var(--text);margin-bottom:14px;display:flex;align-items:center;gap:8px}
-.ai-metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
-.ai-metric{text-align:center;padding:12px 8px;border-radius:12px;background:#f8fbf8;border:1px solid #e0eee3}
-.ai-metric-val{font-family:'DM Serif Display',serif;font-size:22px;line-height:1;margin-bottom:4px}
-.ai-metric-val.green{color:#15803d}
-.ai-metric-val.yellow{color:#92400e}
-.ai-metric-val.red{color:#991b1b}
-.ai-metric-label{font-size:10.5px;color:var(--muted);font-weight:500}
+/* AI NOTE */
+.ai-note{padding:16px 20px;background:#fff;border-radius:14px;border:1px solid var(--border);box-shadow:var(--shadow);font-size:13px;color:var(--mid);line-height:1.6;animation:fadeUp .5s .3s ease both}
 
-/* ── EMPTY STATE ── */
-.empty-state{text-align:center;padding:60px 20px;color:var(--muted)}
-.empty-state-ico{font-size:48px;margin-bottom:14px;opacity:.5}
-.empty-state-title{font-family:'DM Serif Display',serif;font-size:18px;color:var(--text);margin-bottom:6px}
-.empty-state-sub{font-size:13px}
-
-/* ── MODAL OVERLAY (new patient form) ── */
+/* MODAL */
 .mo-overlay{position:fixed;inset:0;z-index:1000;background:rgba(5,20,10,.62);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:20px;animation:ovFade .22s ease both}
 @keyframes ovFade{from{opacity:0}to{opacity:1}}
 .mo-card{background:#fff;border-radius:20px;width:100%;max-width:520px;box-shadow:0 24px 64px rgba(5,20,10,.3);border:1px solid var(--border);overflow:hidden;animation:cardSlide .28s cubic-bezier(.22,.9,.36,1) both}
@@ -273,8 +291,6 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:#f0f5f1;color:
 .mo-inp::placeholder{color:#b4c8b8}
 .mo-mic{width:42px;height:42px;border:none;border-left:1px solid #e8f0eb;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;transition:background .2s;flex-shrink:0}
 .mo-mic:hover{background:#f0faf2}
-.mo-mic.on{background:#fff0f0;animation:micPulse 1s infinite}
-@keyframes micPulse{0%,100%{background:#fff0f0}50%{background:#ffe0e0}}
 .mo-hint{font-size:11px;color:var(--muted);margin-top:4px}
 .mo-err{font-size:11.5px;color:#e53935;margin-top:4px;display:flex;align-items:center;gap:4px}
 .mo-pills{display:flex;gap:8px;flex-wrap:wrap}
@@ -304,87 +320,29 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:#f0f5f1;color:
 .mo-submit{flex:2;padding:11px;border-radius:10px;border:none;background:linear-gradient(135deg,var(--g-mid),var(--g-bright));color:#fff;font-size:13.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;box-shadow:0 4px 16px rgba(27,101,48,.3);transition:all .22s}
 .mo-submit:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(27,101,48,.42)}
 
-/* ── LOADING ANALYSIS ── */
-.loading-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:56px 24px;text-align:center}
+/* LOADING */
+.loading-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:72px 24px;text-align:center}
 .loading-ring{width:64px;height:64px;border-radius:50%;border:4px solid #e8f5ec;border-top-color:var(--g-bright);animation:spin 1s linear infinite;margin-bottom:20px}
 @keyframes spin{to{transform:rotate(360deg)}}
 .loading-title{font-family:'DM Serif Display',serif;font-size:20px;color:var(--text);margin-bottom:6px}
 .loading-sub{font-size:13px;color:var(--muted)}
 
-@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
 `;
-
-/* ─────────────────────────────────────────────────
-   AI TRIAGE ENGINE (mock — swap with real API)
-───────────────────────────────────────────────── */
-function runAITriage(symptoms) {
-  const s = symptoms.toLowerCase();
-  const critical = ["chest pain", "unconscious", "seizure", "heavy bleeding", "can't breathe",
-    "stroke", "paralysis", "high bp", "eclampsia", "premature", "heart", "सीने में दर्द",
-    "बेहोशी", "दौरा", "ज्यादा खून"];
-  const moderate = ["fever", "vomiting", "diarrhea", "weakness", "headache", "anaemia",
-    "swelling", "pain", "infection", "wound", "बुखार", "उल्टी", "दस्त", "कमजोरी",
-    "सिरदर्द", "सूजन", "दर्द"];
-
-  let triageLevel = "green";
-  if (critical.some(k => s.includes(k))) triageLevel = "red";
-  else if (moderate.some(k => s.includes(k))) triageLevel = "yellow";
-
-  const confidence = triageLevel === "red" ? 94 : triageLevel === "yellow" ? 87 : 91;
-
-  const metrics = {
-    riskScore: triageLevel === "red" ? 82 : triageLevel === "yellow" ? 54 : 18,
-    urgency: triageLevel === "red" ? "High" : triageLevel === "yellow" ? "Moderate" : "Low",
-    predictedDiag: triageLevel === "red" ? "Acute" : triageLevel === "yellow" ? "Moderate" : "Mild",
-    matchedSymptoms: triageLevel === "red" ? 6 : triageLevel === "yellow" ? 4 : 2,
-    recommendation: triageLevel === "red" ? "Doctor" : triageLevel === "yellow" ? "PHC" : "Home Care",
-  };
-
-  const symptomTags = {
-    red: ["High Risk Symptoms", "Requires Immediate Care", "Vitals Unstable"],
-    yellow: ["Moderate Risk", "Monitor Closely", "PHC Visit Needed"],
-    green: ["Low Risk", "Manageable at Home", "Routine Check-up"],
-  };
-
-  const aiNote = {
-    red: "🤖 AI model detected high-risk indicators in reported symptoms. Immediate medical evaluation is strongly recommended. Do not delay.",
-    yellow: "🤖 Symptoms suggest moderate concern. Close monitoring and PHC visit within 48 hours advised. Start basic remedies.",
-    green: "🤖 No critical indicators found. Symptoms appear manageable with home care. Reassess if symptoms worsen.",
-  };
-
-  return { triageLevel, confidence, metrics, symptomTags, aiNote };
-}
-
-/* ─────────────────────────────────────────────────
-   VOICE HOOK
-───────────────────────────────────────────────── */
-function useSpeech() {
-  const SR = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
-  const ref = useRef(null);
-  const [active, setActive] = useState(null);
-  function stop() { if (ref.current) { try { ref.current.stop(); } catch (_) {} ref.current = null; } setActive(null); }
-  function start(key, cb) {
-    if (!SR) { alert("Voice input needs Chrome/Edge with mic access."); return; }
-    if (active === key) { stop(); return; }
-    stop();
-    const r = new SR(); r.lang = "hi-IN"; r.interimResults = true; r.continuous = false;
-    ref.current = r; setActive(key);
-    r.onresult = e => { let t = ""; for (let i = e.resultIndex; i < e.results.length; i++) t += e.results[i][0].transcript; cb(t); };
-    r.onerror = () => stop(); r.onend = () => { ref.current = null; setActive(null); };
-    try { r.start(); } catch (_) { stop(); }
-  }
-  return { active, start, stop };
-}
 
 /* ─────────────────────────────────────────────────
    MAIN COMPONENT
 ───────────────────────────────────────────────── */
 export default function PatientDiagnosisDashboard() {
+  // Boot directly into result view with the default mock patient
+  const defaultTriage = runAITriage(DEFAULT_PATIENT.symptoms);
+
   const [showModal, setShowModal] = useState(false);
-  const [view, setView] = useState("empty"); // "empty" | "loading" | "result"
-  const [patient, setPatient] = useState(null);
-  const [triage, setTriage] = useState(null);
-  const [selectedTriage, setSelectedTriage] = useState(null);
+  const [view, setView] = useState("result");           // ← starts on "result"
+  const [patient, setPatient] = useState(DEFAULT_PATIENT); // ← pre-loaded
+  const [triage, setTriage] = useState(defaultTriage);
+  const [selectedTriage, setSelectedTriage] = useState(defaultTriage.triageLevel);
+
   const [form, setForm] = useState({ name: "", phone: "", age: "", symptoms: "" });
   const [gender, setGender] = useState("");
   const [errors, setErrors] = useState({});
@@ -416,7 +374,7 @@ export default function PatientDiagnosisDashboard() {
     }, 2200);
   }
 
-  const initials = (name) => name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
+  const initials = name => name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
   const metricColor = (k, v) => {
     if (k === "riskScore") return v > 70 ? "red" : v > 40 ? "yellow" : "green";
     if (k === "matchedSymptoms") return v >= 5 ? "red" : v >= 3 ? "yellow" : "green";
@@ -427,7 +385,7 @@ export default function PatientDiagnosisDashboard() {
     <>
       <style>{S}</style>
 
-      {/* ── SIDEBAR ── */}
+      {/* SIDEBAR */}
       <aside className="sb">
         <a className="sb-logo" href="#">
           <span style={{ fontSize: 20 }}>🌿</span>
@@ -436,7 +394,7 @@ export default function PatientDiagnosisDashboard() {
         <nav className="sb-nav">
           <div className="sb-section">Main Menu</div>
           {[
-            { ico: "🏠", label: "Dashboard" },
+            { ico: "🏠", label: "Home" },
             { ico: "👥", label: "My Patients", badge: "23", active: true },
             { ico: "🤖", label: "AI Diagnosis" },
             { ico: "📅", label: "Visit Schedule" },
@@ -456,12 +414,12 @@ export default function PatientDiagnosisDashboard() {
           ))}
         </nav>
         <div className="sb-user">
-          <div className="sb-av">{dashboardUser.initials}</div>
-          <div><div className="sb-uname">{dashboardUser.name}</div><div className="sb-urole">{dashboardUser.ashaId}</div></div>
+          <div className="sb-av">RS</div>
+          <div><div className="sb-uname">Rekha Sharma</div><div className="sb-urole">ASHA-BR-1042</div></div>
         </div>
       </aside>
 
-      {/* ── TOPBAR ── */}
+      {/* TOPBAR */}
       <header className="tb">
         <div className="tb-bc">GraamSehat &nbsp;›&nbsp; <strong>Patient Diagnosis</strong></div>
         <div className="tb-search">
@@ -469,13 +427,13 @@ export default function PatientDiagnosisDashboard() {
           <input placeholder="Search patients, records…" />
         </div>
         <div className="tb-right">
-          <span className="tb-greet">Good morning, <strong>{dashboardUser.name.split(' ')[0]}</strong> 👋</span>
+          <span className="tb-greet">Good morning, <strong>Rekha</strong> 👋</span>
           <div className="tb-notif">🔔<span className="tb-dot" /></div>
-          <div className="tb-av">{dashboardUser.initials}</div>
+          <div className="tb-av">RS</div>
         </div>
       </header>
 
-      {/* ── MAIN ── */}
+      {/* MAIN */}
       <div className="layout">
         <div className="content">
 
@@ -485,27 +443,12 @@ export default function PatientDiagnosisDashboard() {
               <div className="pg-title">Patient <span>Diagnosis</span></div>
               <div className="pg-sub">AI-powered symptom triage for ASHA field workers</div>
             </div>
-            <button className="pg-back" onClick={() => setShowModal(true)}>
+            <button className="pg-btn" onClick={() => setShowModal(true)}>
               ➕ &nbsp;Register New Patient
             </button>
           </div>
 
-          {/* ── EMPTY STATE ── */}
-          {view === "empty" && (
-            <div className="empty-state" style={{ animation: "fadeUp .5s ease both" }}>
-              <div className="empty-state-ico">🩺</div>
-              <div className="empty-state-title">No Patient Registered Yet</div>
-              <div className="empty-state-sub">Click "Register New Patient" to begin AI triage diagnosis</div>
-              <button
-                onClick={() => setShowModal(true)}
-                style={{ marginTop: 24, padding: "11px 28px", borderRadius: 50, border: "none", background: "linear-gradient(135deg,var(--g-mid),var(--g-bright))", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans',sans-serif", boxShadow: "0 4px 16px rgba(27,101,48,.3)" }}
-              >
-                + Register Patient
-              </button>
-            </div>
-          )}
-
-          {/* ── LOADING ── */}
+          {/* LOADING */}
           {view === "loading" && (
             <div className="loading-wrap" style={{ animation: "fadeUp .4s ease both" }}>
               <div className="loading-ring" />
@@ -514,13 +457,13 @@ export default function PatientDiagnosisDashboard() {
             </div>
           )}
 
-          {/* ── RESULT ── */}
+          {/* RESULT */}
           {view === "result" && patient && triage && (
             <>
               {/* PATIENT SUMMARY */}
               <div className="pat-card">
                 <div className="pat-av">{initials(patient.name)}</div>
-                <div className="pat-info">
+                <div style={{ flex: 1 }}>
                   <div className="pat-name">{patient.name}</div>
                   <div className="pat-meta">
                     {patient.age && <div className="pat-tag">🎂 {patient.age} yrs</div>}
@@ -534,23 +477,23 @@ export default function PatientDiagnosisDashboard() {
               </div>
 
               {/* AI BANNER */}
-              <div className="ai-processing">
-                <div className="ai-proc-ico">🤖</div>
+              <div className="ai-banner">
+                <div className="ai-ico">🤖</div>
                 <div style={{ flex: 1 }}>
-                  <div className="ai-proc-label">GraamSehat AI · Symptom Support Tool</div>
-                  <div className="ai-proc-title">Analysis Complete — Triage Result Ready</div>
-                  <div className="ai-proc-sub">Based on reported symptoms and pattern matching against 10,000+ rural health cases</div>
+                  <div className="ai-label">GraamSehat AI · Symptom Support Tool</div>
+                  <div className="ai-title">Analysis Complete — Triage Result Ready</div>
+                  <div className="ai-sub">Based on reported symptoms and pattern matching against 10,000+ rural health cases</div>
                 </div>
-                <div className="ai-proc-conf">
+                <div className="ai-conf">
                   <div className="ai-conf-val">{triage.confidence}%</div>
-                  <div className="ai-conf-label">Confidence</div>
+                  <div className="ai-conf-lbl">Confidence</div>
                 </div>
               </div>
 
-              {/* AI METRICS */}
-              <div className="ai-strip">
-                <div className="ai-strip-title">🧠 AI Analysis Breakdown</div>
-                <div className="ai-metrics">
+              {/* METRICS */}
+              <div className="metrics-strip">
+                <div className="metrics-title">🧠 AI Analysis Breakdown</div>
+                <div className="metrics-grid">
                   {[
                     { label: "Risk Score", val: triage.metrics.riskScore, key: "riskScore" },
                     { label: "Urgency", val: triage.metrics.urgency, key: "urgency" },
@@ -558,86 +501,65 @@ export default function PatientDiagnosisDashboard() {
                     { label: "Matched Symptoms", val: triage.metrics.matchedSymptoms, key: "matchedSymptoms" },
                     { label: "Recommendation", val: triage.metrics.recommendation, key: "rec" },
                   ].map(m => (
-                    <div className="ai-metric" key={m.label}>
-                      <div className={`ai-metric-val ${metricColor(m.key, m.val)}`}>{m.val}</div>
-                      <div className="ai-metric-label">{m.label}</div>
+                    <div className="metric" key={m.label}>
+                      <div className={`metric-val ${metricColor(m.key, m.val)}`}>{m.val}</div>
+                      <div className="metric-lbl">{m.label}</div>
                     </div>
                   ))}
                 </div>
               </div>
 
               {/* TRIAGE CARDS */}
-              <div className="section-label">Triage Assessment — Select to view details</div>
+              <div className="sec-label">Triage Assessment — Select to view details</div>
               <div className="triage-row">
-
                 {/* GREEN */}
-                <div
-                  className={`tc green${selectedTriage === "green" ? " selected" : ""}`}
-                  onClick={() => setSelectedTriage("green")}
-                  style={{ animationDelay: ".05s" }}
-                >
-                  {selectedTriage === "green" && <div className="tc-selected-indicator">✓</div>}
+                <div className={`tc green${selectedTriage === "green" ? " sel" : ""}`} onClick={() => setSelectedTriage("green")} style={{ animationDelay: ".05s" }}>
+                  {selectedTriage === "green" && <div className="tc-check">✓</div>}
                   <div className="tc-icon">🟢</div>
                   <div className="tc-badge">✅ SAFE</div>
                   <div className="tc-title">No Immediate Risk</div>
                   <div className="tc-desc">Symptoms are mild and manageable at home with basic care and monitoring.</div>
                   <div className="tc-symptoms">
-                    {["Minor cold/cough", "Low-grade fever", "Fatigue", "Mild pain"].map(t => (
-                      <span className="tc-symptom-tag" key={t}>{t}</span>
-                    ))}
+                    {["Minor cold/cough", "Low-grade fever", "Fatigue", "Mild pain"].map(t => <span className="tc-tag" key={t}>{t}</span>)}
                   </div>
-                  <div className="tc-ai-note">Home remedies advised. Monitor for 2–3 days. No hospital visit needed.</div>
+                  <div className="tc-note">Home remedies advised. Monitor for 2–3 days. No hospital visit needed.</div>
                 </div>
-
                 {/* YELLOW */}
-                <div
-                  className={`tc yellow${selectedTriage === "yellow" ? " selected" : ""}`}
-                  onClick={() => setSelectedTriage("yellow")}
-                  style={{ animationDelay: ".10s" }}
-                >
-                  {selectedTriage === "yellow" && <div className="tc-selected-indicator">✓</div>}
+                <div className={`tc yellow${selectedTriage === "yellow" ? " sel" : ""}`} onClick={() => setSelectedTriage("yellow")} style={{ animationDelay: ".10s" }}>
+                  {selectedTriage === "yellow" && <div className="tc-check">✓</div>}
                   <div className="tc-icon">🟡</div>
                   <div className="tc-badge">⚠️ NEEDS ATTENTION</div>
                   <div className="tc-title">Monitor Closely</div>
                   <div className="tc-desc">Moderate symptoms detected. PHC visit recommended within 48 hours.</div>
                   <div className="tc-symptoms">
-                    {["Persistent fever", "Vomiting", "Weakness", "Diarrhoea", "Swelling"].map(t => (
-                      <span className="tc-symptom-tag" key={t}>{t}</span>
-                    ))}
+                    {["Persistent fever", "Vomiting", "Weakness", "Diarrhoea", "Swelling"].map(t => <span className="tc-tag" key={t}>{t}</span>)}
                   </div>
-                  <div className="tc-ai-note">Initiate basic remedies. Visit Primary Health Centre. Do not ignore.</div>
+                  <div className="tc-note">Initiate basic remedies. Visit Primary Health Centre. Do not ignore.</div>
                 </div>
-
                 {/* RED */}
-                <div
-                  className={`tc red${selectedTriage === "red" ? " selected" : ""}`}
-                  onClick={() => setSelectedTriage("red")}
-                  style={{ animationDelay: ".15s" }}
-                >
-                  {selectedTriage === "red" && <div className="tc-selected-indicator">✓</div>}
+                <div className={`tc red${selectedTriage === "red" ? " sel" : ""}`} onClick={() => setSelectedTriage("red")} style={{ animationDelay: ".15s" }}>
+                  {selectedTriage === "red" && <div className="tc-check">✓</div>}
                   <div className="tc-icon">🔴</div>
                   <div className="tc-badge">🚨 CRITICAL</div>
                   <div className="tc-title">Needs Doctor Now</div>
                   <div className="tc-desc">High-risk symptoms detected. Immediate medical attention required.</div>
                   <div className="tc-symptoms">
-                    {["Chest pain", "Seizure", "High BP", "Severe bleeding", "Unconscious"].map(t => (
-                      <span className="tc-symptom-tag" key={t}>{t}</span>
-                    ))}
+                    {["Chest pain", "Seizure", "High BP", "Severe bleeding", "Unconscious"].map(t => <span className="tc-tag" key={t}>{t}</span>)}
                   </div>
-                  <div className="tc-ai-note">Do NOT delay. Contact nearby doctor immediately. Call 108 if required.</div>
+                  <div className="tc-note">Do NOT delay. Contact nearby doctor immediately. Call 108 if required.</div>
                 </div>
               </div>
 
-              {/* ── RESULT PANEL based on AI triage ── */}
+              {/* RESULT PANEL */}
               {triage.triageLevel === "red" && (
-                <div className="result-panel" style={{ animationDelay: ".2s" }}>
+                <div className="result-panel">
                   <div className="dr-header">
-                    <div className="dr-header-ico">🏥</div>
+                    <div className="dr-hico">🏥</div>
                     <div>
-                      <div className="dr-header-title">Nearby Doctors — Patna</div>
-                      <div className="dr-header-sub">Verified doctors within 5 km · Contact immediately</div>
+                      <div className="dr-htitle">Nearby Doctors — Patna</div>
+                      <div className="dr-hsub">Verified doctors within 5 km · Contact immediately</div>
                     </div>
-                    <div className="dr-header-alert">🚨 URGENT — Refer Now</div>
+                    <div className="dr-alert">🚨 URGENT — Refer Now</div>
                   </div>
                   <div className="dr-body">
                     <div className="dr-grid">
@@ -649,9 +571,7 @@ export default function PatientDiagnosisDashboard() {
                           <div className="dr-hosp">🏥 {d.hospital}</div>
                           <div className="dr-addr">📌 {d.address}</div>
                           <div className="dr-avail">🕐 {d.avail}</div>
-                          <button className="dr-call" onClick={() => alert(`Calling ${d.name} at ${d.phone}…`)}>
-                            📞 &nbsp;{d.phone}
-                          </button>
+                          <button className="dr-call" onClick={() => alert(`Calling ${d.name} at ${d.phone}…`)}>📞 &nbsp;{d.phone}</button>
                         </div>
                       ))}
                     </div>
@@ -664,26 +584,19 @@ export default function PatientDiagnosisDashboard() {
               )}
 
               {(triage.triageLevel === "green" || triage.triageLevel === "yellow") && (
-                <div className="result-panel" style={{ animationDelay: ".2s" }}>
+                <div className="result-panel">
                   <div className={`rem-header ${triage.triageLevel === "green" ? "green-bg" : "yellow-bg"}`}>
-                    <div className="rem-header-ico">{triage.triageLevel === "green" ? "🌿" : "⚕️"}</div>
+                    <div className="rem-hico">{triage.triageLevel === "green" ? "🌿" : "⚕️"}</div>
                     <div>
-                      <div className="rem-header-title">
-                        {triage.triageLevel === "green" ? "Recommended Home Remedies" : "Care Guidelines & Remedies"}
-                      </div>
-                      <div className="rem-header-sub">
-                        {triage.triageLevel === "green"
-                          ? "Follow these steps for quick recovery at home"
-                          : "Immediate steps to take before PHC visit"}
-                      </div>
+                      <div className="rem-htitle">{triage.triageLevel === "green" ? "Recommended Home Remedies" : "Care Guidelines & Remedies"}</div>
+                      <div className="rem-hsub">{triage.triageLevel === "green" ? "Follow these steps for quick recovery at home" : "Immediate steps to take before PHC visit"}</div>
                     </div>
                   </div>
                   <div className="rem-body">
                     <div className="rem-grid">
                       {REMEDIES[triage.triageLevel].map((r, i) => (
-                        <div key={i} className={`rem-card ${triage.triageLevel === "green" ? "green-c" : "yellow-c"}`}
-                          style={{ animationDelay: `${.25 + i * .05}s`, animation: "fadeUp .5s ease both" }}>
-                          <div className="rem-ico-wrap">{r.icon}</div>
+                        <div key={i} className={`rem-card ${triage.triageLevel === "green" ? "green-c" : "yellow-c"}`} style={{ animationDelay: `${.25 + i * .05}s` }}>
+                          <div className="rem-ico">{r.icon}</div>
                           <div className="rem-title">{r.title}</div>
                           <div className="rem-desc">{r.desc}</div>
                         </div>
@@ -700,18 +613,14 @@ export default function PatientDiagnosisDashboard() {
               )}
 
               {/* AI NOTE */}
-              <div style={{ padding: "16px 20px", background: "#fff", borderRadius: 14, border: "1px solid var(--border)", boxShadow: "var(--shadow)", fontSize: 13, color: "var(--mid)", lineHeight: 1.6, animation: "fadeUp .5s .3s ease both" }}>
-                {triage.aiNote[triage.triageLevel]}
-              </div>
+              <div className="ai-note">{triage.aiNote[triage.triageLevel]}</div>
 
               {/* REGISTER ANOTHER */}
-              <div style={{ textAlign: "center", marginTop: 32 }}>
-                <button onClick={() => { setView("empty"); setPatient(null); setTriage(null); setSelectedTriage(null); }}
-                  style={{ padding: "11px 28px", borderRadius: 50, border: "1.5px solid #ddeae0", background: "#fff", fontSize: 13.5, fontWeight: 600, color: "var(--mid)", cursor: "pointer", fontFamily: "'DM Sans',sans-serif", marginRight: 12 }}>
-                  ← Back
-                </button>
-                <button onClick={() => setShowModal(true)}
-                  style={{ padding: "11px 28px", borderRadius: 50, border: "none", background: "linear-gradient(135deg,var(--g-mid),var(--g-bright))", color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans',sans-serif", boxShadow: "0 4px 16px rgba(27,101,48,.3)" }}>
+              <div style={{ textAlign: "center", marginTop: 28 }}>
+                <button
+                  onClick={() => setShowModal(true)}
+                  style={{ padding: "11px 28px", borderRadius: 50, border: "none", background: "linear-gradient(135deg,var(--g-mid),var(--g-bright))", color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans',sans-serif", boxShadow: "0 4px 16px rgba(27,101,48,.3)" }}
+                >
                   + Register Another Patient
                 </button>
               </div>
@@ -720,7 +629,7 @@ export default function PatientDiagnosisDashboard() {
         </div>
       </div>
 
-      {/* ── NEW PATIENT MODAL ── */}
+      {/* NEW PATIENT MODAL */}
       {showModal && (
         <div className="mo-overlay" onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }}>
           <div className="mo-card">
@@ -732,46 +641,36 @@ export default function PatientDiagnosisDashboard() {
               </div>
               <button className="mo-close" onClick={() => setShowModal(false)}>✕</button>
             </div>
-
             <div className="mo-body">
               {/* NAME */}
               <div className="mo-field">
                 <label className="mo-label">👤 Patient Name <span className="mo-req">*</span></label>
                 <div className={`mo-wrap${errors.name ? " err" : ""}`}>
                   <input className="mo-inp" value={form.name} onChange={e => setF("name", e.target.value)} placeholder="e.g. Anita Devi" autoComplete="off" />
-                  <button className={`mo-mic${micActive === "name" ? " on" : ""}`}
-                    onClick={() => micStart("name", t => setF("name", t))}>
+                  <button className={`mo-mic${micActive === "name" ? " on" : ""}`} onClick={() => micStart("name", t => setF("name", t))}>
                     {micActive === "name" ? "⏹️" : "🎙️"}
                   </button>
                 </div>
-                {errors.name ? <div className="mo-err">⚠️ {errors.name}</div>
-                  : <div className="mo-hint">🎤 Tap mic and say the patient's full name</div>}
+                {errors.name ? <div className="mo-err">⚠️ {errors.name}</div> : <div className="mo-hint">🎤 Tap mic and say the patient's full name</div>}
               </div>
-
               {/* PHONE */}
               <div className="mo-field">
                 <label className="mo-label">📱 Phone Number <span className="mo-req">*</span></label>
                 <div className={`mo-wrap${errors.phone ? " err" : ""}`}>
-                  <input className="mo-inp" value={form.phone}
-                    onChange={e => setF("phone", e.target.value.replace(/\D/g, "").slice(0, 10))}
-                    placeholder="10-digit mobile number" type="tel" maxLength={10} />
-                  <button className={`mo-mic${micActive === "phone" ? " on" : ""}`}
-                    onClick={() => micStart("phone", t => setF("phone", t.replace(/\D/g, "").slice(0, 10)))}>
+                  <input className="mo-inp" value={form.phone} onChange={e => setF("phone", e.target.value.replace(/\D/g, "").slice(0, 10))} placeholder="10-digit mobile number" type="tel" maxLength={10} />
+                  <button className={`mo-mic${micActive === "phone" ? " on" : ""}`} onClick={() => micStart("phone", t => setF("phone", t.replace(/\D/g, "").slice(0, 10)))}>
                     {micActive === "phone" ? "⏹️" : "🎙️"}
                   </button>
                 </div>
-                {errors.phone ? <div className="mo-err">⚠️ {errors.phone}</div>
-                  : <div className="mo-hint">🎤 Say digits clearly</div>}
+                {errors.phone ? <div className="mo-err">⚠️ {errors.phone}</div> : <div className="mo-hint">🎤 Say digits clearly</div>}
               </div>
-
               {/* AGE + GENDER */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1.7fr", gap: 14, marginBottom: 17 }}>
                 <div>
                   <label className="mo-label">🎂 Age</label>
                   <div className="mo-wrap">
                     <input className="mo-inp" value={form.age} onChange={e => setF("age", e.target.value)} placeholder="Years" type="number" min={1} max={120} />
-                    <button className={`mo-mic${micActive === "age" ? " on" : ""}`}
-                      onClick={() => micStart("age", t => { const n = t.match(/\d+/); if (n) setF("age", n[0]); })}>
+                    <button className={`mo-mic${micActive === "age" ? " on" : ""}`} onClick={() => micStart("age", t => { const n = t.match(/\d+/); if (n) setF("age", n[0]); })}>
                       {micActive === "age" ? "⏹️" : "🎙️"}
                     </button>
                   </div>
@@ -785,23 +684,18 @@ export default function PatientDiagnosisDashboard() {
                   </div>
                 </div>
               </div>
-
               {/* SYMPTOMS */}
               <div className="mo-field" style={{ marginBottom: 4 }}>
                 <label className="mo-label">🩺 Symptoms <span className="mo-req">*</span></label>
                 <div className={`mo-ta-wrap${errors.symptoms ? " err" : ""}`}>
-                  <textarea className="mo-ta" value={form.symptoms}
-                    onChange={e => setF("symptoms", e.target.value)}
-                    placeholder="Describe symptoms… e.g. headache, fever since 2 days, weakness" />
+                  <textarea className="mo-ta" value={form.symptoms} onChange={e => setF("symptoms", e.target.value)} placeholder="Describe symptoms… e.g. headache, fever since 2 days, weakness" />
                   <div className="mo-ta-foot">
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
                       {micActive === "symptoms"
-                        ? <><div className="mo-wave"><span /><span /><span /><span /><span /></div>
-                          <span style={{ fontSize: 11.5, color: "var(--g-mid)", fontWeight: 600 }}>Listening…</span></>
+                        ? <><div className="mo-wave"><span /><span /><span /><span /><span /></div><span style={{ fontSize: 11.5, color: "var(--g-mid)", fontWeight: 600 }}>Listening…</span></>
                         : <span style={{ fontSize: 11.5, color: "var(--muted)" }}>Speak in Hindi or English</span>}
                     </div>
-                    <button className={`mo-speak-btn${micActive === "symptoms" ? " on" : ""}`}
-                      onClick={() => micStart("symptoms", t => setF("symptoms", t))}>
+                    <button className={`mo-speak-btn${micActive === "symptoms" ? " on" : ""}`} onClick={() => micStart("symptoms", t => setF("symptoms", t))}>
                       <span style={{ fontSize: 14 }}>{micActive === "symptoms" ? "⏹️" : "🎙️"}</span>
                       {micActive === "symptoms" ? "Stop" : "Speak"}
                     </button>
@@ -810,7 +704,6 @@ export default function PatientDiagnosisDashboard() {
                 {errors.symptoms && <div className="mo-err">⚠️ {errors.symptoms}</div>}
               </div>
             </div>
-
             <div className="mo-footer">
               <button className="mo-cancel" onClick={() => setShowModal(false)}>Cancel</button>
               <button className="mo-submit" onClick={handleSubmit}>Run AI Triage →</button>

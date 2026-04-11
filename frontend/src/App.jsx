@@ -47,11 +47,11 @@ export default function App() {
           </ProtectedRoute>
         } />
 
-        {/* <Route path="/dashboard" element={
+        <Route path="/dashboard" element={
           <ProtectedRoute>
             <DashboardPage />
           </ProtectedRoute>
-        } /> */}
+        } />
 
         {/* 🔥 NEW ROUTES (Navbar pages) */}
         <Route path="/profile" element={

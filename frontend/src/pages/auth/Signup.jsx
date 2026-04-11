@@ -377,38 +377,44 @@ export default function Signup() {
 
 
   const handleRegister = async () => {
-    setError('');
-    if (!agree) {
-      setError('Please accept Terms & Conditions.');
-      return;
-    }
+  setError('');
+  if (!agree) {
+    setError('Please accept Terms & Conditions.');
+    return;
+  }
 
-    if (!firstName || !phone || !ashaId || !village || pwd.length < 8) {
-      setError('Please complete all required fields and choose a strong password.');
-      return;
-    }
+  if (!firstName || !phone || !ashaId || !village || pwd.length < 8) {
+    setError('Please complete all required fields and choose a strong password.');
+    return;
+  }
 
-    setLoading(true);
-    try {
-      const response = await signupUser({
-        firstName,
-        lastName,
-        phone,
-        ashaId,
-        state: stateValue,
-        district,
-        village,
-        password: pwd,
-      });
+  setLoading(true);
+  try {
+    const response = await signupUser({
+      firstName,
+      lastName,
+      phone,
+      ashaId,
+      state: stateValue,
+      district,
+      village,
+      password: pwd,
+    });
 
-      setAuthUser(response.data, true);
-      navigate('/homepage');
-    } catch (err) {
-      setError(err.message || 'Registration failed. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
+    // 🔥 FIX STARTS HERE
+    localStorage.setItem("token", response.token);
+    localStorage.setItem("user", JSON.stringify(response.data));
+    // 🔥 FIX ENDS HERE
+
+    setAuthUser(response.data, true);
+
+    navigate('/homepage');
+  } catch (err) {
+    setError(err.message || 'Registration failed. Please try again.');
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <>

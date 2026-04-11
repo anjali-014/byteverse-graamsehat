@@ -519,13 +519,13 @@ const quickActions = [
 ];
 
 const navItems = [
-  { ico: "🏠", label: "Dashboard",      active: true  },
-  { ico: "👥", label: "My Patients",    badge: "23"   },
-  { ico: "🤖", label: "AI Diagnosis"               },
-  { ico: "📅", label: "Visit Schedule"             },
-  { ico: "💉", label: "Immunisation"               },
-  { ico: "📋", label: "Health Records"             },
-  { ico: "📊", label: "Reports"                    },
+  { ico: "🏠", label: "Dashboard",      active: true, route: "/homepage" },
+  { ico: "👥", label: "My Patients",    badge: "23", route: "/homepage" },
+  { ico: "🤖", label: "AI Diagnosis", route: "/dashboard" },
+  { ico: "📅", label: "Visit Schedule", route: "/homepage" },
+  { ico: "💉", label: "Immunisation", route: "/homepage" },
+  { ico: "📋", label: "Health Records", route: "/homepage" },
+  { ico: "📊", label: "Reports", route: "/homepage" },
 ];
 
 const bottomNav = [
@@ -588,6 +588,10 @@ export default function Dashboard() {
     navigate('/login');
   };
 
+  const handleNavClick = (route) => {
+    navigate(route);
+  };
+
   return (
     <>
       <style>{styles}</style>
@@ -602,7 +606,7 @@ export default function Dashboard() {
         <nav className="d-nav">
           <div className="d-nav-section">Main Menu</div>
           {navItems.map((item) => (
-            <button key={item.label} className={`d-nav-item${item.active ? " active" : ""}`}>
+            <button key={item.label} className={`d-nav-item${item.active ? " active" : ""}`} onClick={() => handleNavClick(item.route)}>
               <span className="d-nav-ico">{item.ico}</span>
               {item.label}
               {item.badge && <span className="d-nav-badge">{item.badge}</span>}
