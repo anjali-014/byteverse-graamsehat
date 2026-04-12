@@ -1,38 +1,38 @@
-import i18n from "i18next";
-import { initReactI18next } from "react-i18next";
+import i18n from 'i18next';
+import { initReactI18next } from 'react-i18next';
+import LanguageDetector from 'i18next-browser-languagedetector';
 
 const resources = {
   en: {
     translation: {
       welcome: "Welcome",
-      login: "Login",
-      signup: "Signup",
-      newPatient: "New Patient",
-      dashboard: "Dashboard",
-      emergency: "Emergency",
-    },
+      hello: "Hello",
+    }
   },
   hi: {
     translation: {
       welcome: "स्वागत है",
-      login: "लॉगिन",
-      signup: "साइनअप",
-      newPatient: "नया मरीज",
-      dashboard: "डैशबोर्ड",
-      emergency: "आपातकाल",
-    },
-  },
+      hello: "नमस्ते",
+    }
+  }
 };
 
 i18n
+  .use(LanguageDetector)
   .use(initReactI18next)
   .init({
     resources,
-    lng: localStorage.getItem("lang") || "en",
-    fallbackLng: "en",
+    fallbackLng: 'en',
+    debug: false,
+
     interpolation: {
       escapeValue: false,
     },
+
+    detection: {
+      order: ['localStorage', 'navigator', 'htmlTag'],
+      caches: ['localStorage'],
+    }
   });
 
 export default i18n;

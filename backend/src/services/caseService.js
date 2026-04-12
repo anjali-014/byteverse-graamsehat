@@ -46,13 +46,13 @@ export async function upsertCases(cases) {
             id, asha_id, patient_age_group, patient_sex, is_pregnant,
             symptoms, triage_result, confidence_score, contributing_factors,
             input_method, village_tag, lat, lng, clock_skew,
-            client_timestamp, client_version
+            client_timestamp, client_version, synced_at
           ) VALUES (
             $1,$2,$3,$4,$5,
             $6::jsonb,
             $7,$8,
             $9::jsonb,
-            $10,$11,$12,$13,$14,$15,$16
+            $10,$11,$12,$13,$14,$15,$16, NOW()
           )
           ON CONFLICT (id) DO UPDATE SET
             synced_at      = NOW(),

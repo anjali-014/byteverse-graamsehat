@@ -2,6 +2,13 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { getSymptomLabel } from '../ml/triageEngine.js'
 import { PHC_DATA, AMBULANCE_NUMBER } from './utils/phcData.js'
+import { getCurrentUser, logoutUser } from "./utils/auth.js";
+
+ const getConfidenceLabel = (conf) => {
+  if (conf >= 90) return { label: 'बहुत पक्का', color: 'green' }
+  if (conf >= 70) return { label: 'पक्का', color: 'yellow' }
+  return { label: 'अनुमान', color: 'orange' }
+ }
 
 const LEVEL_CONFIG = {
   RED: {
@@ -122,6 +129,7 @@ export default function ResultPage() {
           </div>
           <div className="text-white/80 text-lg mt-2">{config.subtext}</div>
 
+          
           {/* Confidence */}
           <div className="mt-4 flex justify-center gap-3">
             <div className="bg-white/15 rounded-xl px-4 py-2 text-sm">
@@ -294,3 +302,4 @@ function FamilyCard({ level, config, visualCards, onClose, phc }) {
     </div>
   )
 }
+ 

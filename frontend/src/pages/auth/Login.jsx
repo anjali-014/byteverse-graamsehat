@@ -364,7 +364,16 @@ export default function Login() {
     try {
       const response = await loginUser(identifier.trim(), password);
       setAuthUser(response.data, remember);
-      navigate("/homepage");
+      
+      // Check if there's a redirect destination stored
+      const redirectData = sessionStorage.getItem('redirectAfterLogin');
+      if (redirectData) {
+        sessionStorage.removeItem('redirectAfterLogin');
+        const { path, state } = JSON.parse(redirectData);
+        navigate(path, { state });
+      } else {
+        navigate("/homepage");
+      }
     } catch (err) {
       setError(err.message || "Login failed. Please try again.");
     } finally {

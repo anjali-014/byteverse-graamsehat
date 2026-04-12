@@ -13,6 +13,7 @@ import dashboardRoutes from './routes/dashboard.js';
 import facilitiesRoutes from './routes/facilities.js';
 import ashaRoutes from './routes/asha.js';
 import authRoutes from './routes/auth.js';
+import statsRoutes from './routes/stats.js';
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -38,6 +39,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/facilities', facilitiesRoutes);
 app.use('/api/asha',       ashaRoutes);
 app.use('/api/auth',       authRoutes);
+app.use('/api/stats',      statsRoutes);
 // 404 handler
 app.use((_req, res) => {
   res.status(404).json({ error: 'Route not found' });

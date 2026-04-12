@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { runTriageInference } from '../ml/triageEngine.js';
+import { saveCase } from './utils/sync.js';
+import { getCurrentUser } from './utils/auth.js';
 
 
 const styles = `
@@ -367,11 +370,60 @@ export default function NewPatientCard({ onClose, onSuccess }) {
     return Object.keys(e).length === 0;
   }
 
-  function handleSubmit() {
-    if (!validate()) return;
+  async function handleSubmit() {
+    console.log('🚀 Starting patient registration...');
+    if (!validate()) {
+      console.log('❌ Validation failed');
+      return;
+    }
     stop();
+    console.log('✅ Validation passed, running triage...');
+    
+    let triageResult = null;
+    try {
+      // Run triage inference on symptoms
+      triageResult = await runTriageInference(form.symptoms);
+      console.log('✅ Triage completed:', triageResult);
+      
+      // Save the case
+      const currentUser = getCurrentUser();
+      const ashaId = currentUser?.ashaId || currentUser?.id || 'demo_worker';
+      await saveCase(triageResult, ashaId);
+      console.log('✅ New patient case saved');
+    } catch (e) {
+      console.warn('Could not process triage or save case:', e);
+      // Create a fallback triage result for display
+      triageResult = {
+        level: 'YELLOW',
+        confidence: 50,
+        detectedSymptoms: form.symptoms ? form.symptoms.split(',').map(s => s.trim()) : [],
+        advice: { steps: ['Please consult a healthcare professional'] }
+      };
+    }
+    
+    console.log('🎉 Setting view to success');
     setView("success");
-    if (onSuccess) onSuccess({ ...form, gender });
+    if (onSuccess) onSuccess({ ...form, gender, triageResult });
+    
+    // Auto-navigate to dashboard after 2 seconds when used as standalone page
+    if (!onSuccess) {
+      console.log('⏰ Auto-navigating to dashboard in 2 seconds...');
+      setTimeout(() => {
+        console.log('🚀 Navigating to dashboard...');
+        const currentUser = getCurrentUser();
+        if (currentUser) {
+          navigate("/dashboard", { state: { patient: { ...form, gender }, triageResult } });
+        } else {
+          console.log('❌ User not authenticated, redirecting to login');
+          // Store the intended destination for after login
+          sessionStorage.setItem('redirectAfterLogin', JSON.stringify({
+            path: '/dashboard',
+            state: { patient: { ...form, gender }, triageResult }
+          }));
+          navigate("/login");
+        }
+      }, 2000);
+    }
   }
 
   // ── VOICE HELPERS ──
@@ -624,7 +676,19 @@ export default function NewPatientCard({ onClose, onSuccess }) {
               </div>
               <button
                 className="np-success-btn"
-                onClick={() => navigate("/dashboard")}
+                onClick={() => {
+                  const currentUser = getCurrentUser();
+                  if (currentUser) {
+                    navigate("/dashboard", { state: { patient: { ...form, gender }, triageResult } });
+                  } else {
+                    // Store the intended destination for after login
+                    sessionStorage.setItem('redirectAfterLogin', JSON.stringify({
+                      path: '/dashboard',
+                      state: { patient: { ...form, gender }, triageResult }
+                    }));
+                    navigate("/login");
+                  }
+                }}
               >
                 Dashboard →
               </button>

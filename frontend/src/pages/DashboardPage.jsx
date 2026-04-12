@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 
 /* ─────────────────────────────────────────────────
    MOCK DATA
@@ -334,19 +335,52 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:#f0f5f1;color:
    MAIN COMPONENT
 ───────────────────────────────────────────────── */
 export default function PatientDiagnosisDashboard() {
-  // Boot directly into result view with the default mock patient
-  const defaultTriage = runAITriage(DEFAULT_PATIENT.symptoms);
+  const navigate = useNavigate();
+  const location = useLocation();
+  
+  // Check if we have patient data from navigation state (from NewPatientCard)
+  const navPatient = location.state?.patient;
+  const navTriageResult = location.state?.triageResult;
+  
+  // Use navigation data if available, otherwise use default mock data
+  const initialPatient = navPatient || DEFAULT_PATIENT;
+  const initialTriage = navTriageResult ? {
+    triageLevel: navTriageResult.level?.toLowerCase() || 'yellow',
+    confidence: navTriageResult.confidence || 50,
+    metrics: {
+      riskScore: navTriageResult.level === 'RED' ? 82 : navTriageResult.level === 'YELLOW' ? 54 : 18,
+      urgency: navTriageResult.level === 'RED' ? "High" : navTriageResult.level === 'YELLOW' ? "Moderate" : "Low",
+      predictedDiag: navTriageResult.level === 'RED' ? "Acute" : navTriageResult.level === 'YELLOW' ? "Moderate" : "Mild",
+      matchedSymptoms: navTriageResult.detectedSymptoms?.length || 2,
+      recommendation: navTriageResult.level === 'RED' ? "Doctor" : navTriageResult.level === 'YELLOW' ? "PHC" : "Home Care",
+    },
+    aiNote: {
+      red: "🤖 AI model detected high-risk indicators in reported symptoms. Immediate medical evaluation is strongly recommended. Do not delay.",
+      yellow: "🤖 Symptoms suggest moderate concern. Close monitoring and PHC visit within 48 hours advised. Start basic remedies.",
+      green: "🤖 No critical indicators found. Symptoms appear manageable with home care. Reassess if symptoms worsen.",
+    }
+  } : runAITriage(initialPatient.symptoms);
 
   const [showModal, setShowModal] = useState(false);
   const [view, setView] = useState("result");           // ← starts on "result"
-  const [patient, setPatient] = useState(DEFAULT_PATIENT); // ← pre-loaded
-  const [triage, setTriage] = useState(defaultTriage);
-  const [selectedTriage, setSelectedTriage] = useState(defaultTriage.triageLevel);
+  const [patient, setPatient] = useState(initialPatient); // ← use navigation data or default
+  const [triage, setTriage] = useState(initialTriage);
+  const [selectedTriage, setSelectedTriage] = useState(initialTriage.triageLevel);
 
   const [form, setForm] = useState({ name: "", phone: "", age: "", symptoms: "" });
   const [gender, setGender] = useState("");
   const [errors, setErrors] = useState({});
   const { active: micActive, start: micStart, stop: micStop } = useSpeech();
+
+  const sidebarItems = [
+    { ico: "🏠", label: "Home", route: "/homepage" },
+    { ico: "👥", label: "My Patients", badge: "23", route: "/mypatients" },
+    { ico: "🤖", label: "AI Diagnosis", route: "/triage" },
+    { ico: "📅", label: "Visit Schedule", route: "/schedule" },
+    { ico: "💉", label: "Immunisation", route: "/immunisation" },
+    { ico: "📋", label: "Health Records", route: "/records" },
+    { ico: "📊", label: "Reports", route: "/reports" },
+  ];
 
   function setF(k, v) { setForm(f => ({ ...f, [k]: v })); if (errors[k]) setErrors(e => ({ ...e, [k]: "" })); }
 
@@ -393,16 +427,12 @@ export default function PatientDiagnosisDashboard() {
         </a>
         <nav className="sb-nav">
           <div className="sb-section">Main Menu</div>
-          {[
-            { ico: "🏠", label: "Home" },
-            { ico: "👥", label: "My Patients", badge: "23", active: true },
-            { ico: "🤖", label: "AI Diagnosis" },
-            { ico: "📅", label: "Visit Schedule" },
-            { ico: "💉", label: "Immunisation" },
-            { ico: "📋", label: "Health Records" },
-            { ico: "📊", label: "Reports" },
-          ].map(item => (
-            <button key={item.label} className={`sb-item${item.active ? " active" : ""}`}>
+          {sidebarItems.map(item => (
+            <button
+              key={item.label}
+              className={`sb-item${location.pathname === item.route ? " active" : ""}`}
+              onClick={() => navigate(item.route)}
+            >
               <span className="sb-ico">{item.ico}</span>
               {item.label}
               {item.badge && <span className="sb-badge">{item.badge}</span>}
@@ -473,6 +503,11 @@ export default function PatientDiagnosisDashboard() {
                     <div className="pat-tag">🪪 ASHA-BR-1042 · Bodh Gaya</div>
                   </div>
                   <div className="pat-symp"><strong>Reported Symptoms:</strong> {patient.symptoms}</div>
+                  {navTriageResult?.detectedSymptoms && navTriageResult.detectedSymptoms.length > 0 && (
+                    <div className="pat-symp" style={{ marginTop: '8px' }}>
+                      <strong>AI Detected Symptoms:</strong> {patient.symptoms}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -613,7 +648,20 @@ export default function PatientDiagnosisDashboard() {
               )}
 
               {/* AI NOTE */}
-              <div className="ai-note">{triage.aiNote[triage.triageLevel]}</div>
+              <div className="ai-note">
+                {navTriageResult?.advice?.steps ? (
+                  <div>
+                    <div style={{ fontWeight: '600', marginBottom: '8px' }}>Recommended Actions:</div>
+                    <ul style={{ paddingLeft: '20px', margin: 0 }}>
+                      {navTriageResult.advice.steps.map((step, index) => (
+                        <li key={index} style={{ marginBottom: '4px' }}>{step}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  triage.aiNote[triage.triageLevel]
+                )}
+              </div>
 
               {/* REGISTER ANOTHER */}
               <div style={{ textAlign: "center", marginTop: 28 }}>

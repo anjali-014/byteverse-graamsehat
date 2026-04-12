@@ -49,13 +49,17 @@ async function deletePendingCase(id) {
 export async function saveCase(triageResult, ashaId) {
   // Build case object matching backend's SyncBatchSchema
   const caseData = {
-    localId:     crypto.randomUUID(),
-    ashaId:      ashaId,
-    triageLevel: triageResult.level,          // 'GREEN' | 'YELLOW' | 'RED'
-    confidence:  triageResult.confidence,
-    symptoms:    triageResult.activeSymptoms,
-    hardOverride: triageResult.hardOverride || false,
-    recordedAt:  new Date().toISOString(),
+    id:                crypto.randomUUID(),
+    ashaId,
+    symptoms:          triageResult.detectedSymptoms || [],
+    triageResult:      triageResult.level,
+    confidenceScore:   Math.min(1, Math.max(0, (triageResult.confidence || 0) / 100)),
+    contributingFactors: [],
+    inputMethod:       'voice',
+    villageTag:        undefined,
+    clientTimestamp:   Date.now(),
+    clientVersion:     '2.0.0',
+    hardOverride:      triageResult.hardOverride || false,
   };
 
   if (navigator.onLine) {
@@ -90,7 +94,12 @@ async function syncBatchToBackend(ashaId, cases) {
     throw new Error(err.error || 'Sync failed');
   }
 
-  return await res.json(); // { synced, rejected, serverTs }
+  const result = await res.json(); // { synced, rejected, serverTs }
+
+  // Dispatch event to update homepage statistics
+  window.dispatchEvent(new CustomEvent('caseStatsUpdate'));
+
+  return result;
 }
 
 // ── Sync all pending cases when back online ───────────────────────────

@@ -6,13 +6,6 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-const ashaPhoto = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='300' viewBox='0 0 400 300'%3E%3Crect width='400' height='300' fill='%23d1fae5'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%23316f43' font-size='22' font-family='Arial,Helvetica,sans-serif'%3EGraamSehat Image Placeholder%3C/text%3E%3C/svg%3E"; 
-
-// ── Place your ASHA worker photo at: src/assets/asha_worker.jpg
-// ── Then import it: import ashaPhoto from "../assets/asha_worker.jpg";
-// ── And replace the src below: <img src={ashaPhoto} ... />
-// ── For now, using a placeholder path — update it to match your project structure.
-const ASHA_PHOTO = "/src/assets/image.png"; // ← update this path
 
 const whyCards = [
   { icon: "👩‍⚕️", title: "ASHA Workers Lack Tools", desc: "Most ASHA workers rely on paper records and memory. GraamSehat gives them AI-powered digital support right in the field." },
@@ -42,12 +35,47 @@ const testimonials = [
 export default function LandingPage() {
   const navigate = useNavigate();
   const [scrollY, setScrollY] = useState(0);
+  const [caseStats, setCaseStats] = useState({
+    green: 0,
+    yellow: 0,
+    red: 0,
+    total: 0
+  });
   const revealRefs = useRef([]);
 
   useEffect(() => {
     const fn = () => setScrollY(window.scrollY);
     window.addEventListener("scroll", fn, { passive: true });
     return () => window.removeEventListener("scroll", fn);
+  }, []);
+
+  // Fetch case statistics
+  useEffect(() => {
+    const fetchCaseStats = async () => {
+      try {
+        const response = await fetch('http://localhost:3001/api/stats/cases');
+        const data = await response.json();
+        if (data.success) {
+          setCaseStats(data.data);
+        }
+      } catch (error) {
+        console.warn('Failed to fetch case statistics:', error);
+      }
+    };
+
+    fetchCaseStats();
+
+    // Listen for case updates
+    const handleCaseUpdate = () => {
+      console.log('Case statistics updated, refreshing...');
+      fetchCaseStats();
+    };
+
+    window.addEventListener('caseStatsUpdate', handleCaseUpdate);
+
+    return () => {
+      window.removeEventListener('caseStatsUpdate', handleCaseUpdate);
+    };
   }, []);
 
   useEffect(() => {
@@ -375,7 +403,7 @@ export default function LandingPage() {
           {/* Full-bleed background photo — ::before = left gradient, ::after = vignette */}
           <div className="lp-hero-bg-photo">
             <img
-              src={ASHA_PHOTO}
+              src="https://res.cloudinary.com/dvravcbwk/image/upload/q_auto/f_auto/v1775946191/WhatsApp_Image_2026-04-12_at_3.50.50_AM_egom86.jpg"
               alt="ASHA worker providing healthcare in rural India"
             />
           </div>
@@ -515,9 +543,10 @@ export default function LandingPage() {
                 <h2 className="lp-h2">Built for Real Village Healthcare Needs</h2>
                 <p className="lp-section-p" style={{ marginBottom:36 }}>We work directly with ASHA workers, ANMs, and PHC staff to make sure GraamSehat works in real conditions — dusty hands, low light, no data.</p>
                 {[
-                  { icon:"🏘️", num:"10,000+", label:"Villagers served across Bihar & UP" },
-                  { icon:"👩‍⚕️", num:"1,400+", label:"ASHA workers actively using the app" },
-                  { icon:"⚡", num:"95%", label:"Triage accuracy rate in field tests" },
+                  { icon:"🟢", num:caseStats.green.toLocaleString(), label:"Green cases (Normal care needed)" },
+                  { icon:"🟡", num:caseStats.yellow.toLocaleString(), label:"Yellow cases (Medical attention needed)" },
+                  { icon:"🔴", num:caseStats.red.toLocaleString(), label:"Red cases (Emergency care needed)" },
+                  { icon:"📊", num:caseStats.total.toLocaleString(), label:"Total cases triaged in last 30 days" },
                 ].map(s => (
                   <div className="lp-trust-stat" key={s.num}>
                     <div className="lp-trust-icon">{s.icon}</div>

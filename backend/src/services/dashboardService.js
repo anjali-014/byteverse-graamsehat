@@ -13,7 +13,7 @@ export async function getSummary(block = 'Bihta') {
   // Last 24 hours window
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-  const [totals, redAlerts, byVillage, activeAshas] = await Promise.all([
+  const [totals, redAlerts, byVillage, activeAshas, recentCases] = await Promise.all([
 
     // 🔹 Totals by triage
     query(
@@ -80,6 +80,25 @@ export async function getSummary(block = 'Bihta') {
        ORDER BY cases_today DESC`,
       [block, since]
     ),
+
+    // 🔹 Recent Cases (for homepage recent patients)
+    query(
+      `SELECT
+         tc.id,
+         tc.triage_result,
+         tc.symptoms,
+         tc.village_tag,
+         tc.client_timestamp,
+         aw.name AS asha_name,
+         aw.village AS asha_village
+       FROM triage_cases tc
+       JOIN asha_workers aw ON tc.asha_id = aw.id
+       WHERE aw.block = $1
+         AND tc.synced_at >= $2
+       ORDER BY tc.client_timestamp DESC
+       LIMIT 10`,
+      [block, since]
+    ),
   ]);
 
   const summary = {
@@ -89,6 +108,7 @@ export async function getSummary(block = 'Bihta') {
     redAlerts: redAlerts.rows,
     byVillage: byVillage.rows,
     activeAshas: activeAshas.rows,
+    recentCases: recentCases.rows,
     generatedAt: new Date().toISOString(),
   };
 
