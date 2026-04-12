@@ -5,6 +5,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import axios from 'axios';
 
 import { checkDbConnection } from './config/db.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -18,28 +19,31 @@ import statsRoutes from './routes/stats.js';
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Middleware
+// ================= MIDDLEWARE =================
 app.use(helmet());
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+
 app.use(cors({
   origin: "*",
   credentials: true
 }));
+
 app.use(express.json({ limit: '2mb' }));
 
-// Root route (for testing)
+// ================= BASIC ROUTES =================
 app.get('/', (req, res) => {
   res.send("Backend is LIVE 🚀");
 });
+
 app.get('/test', (req, res) => {
   res.send("TEST WORKING");
 });
-// Health check
+
 app.get('/api/ping', (_req, res) => {
   res.status(200).json({ ok: true, ts: Date.now() });
 });
 
-// Routes
+// ================= API ROUTES =================
 app.use('/api/sync', syncRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/facilities', facilitiesRoutes);
@@ -47,15 +51,33 @@ app.use('/api/asha', ashaRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/stats', statsRoutes);
 
-// 404 handler
+// ================= ML ROUTE =================
+app.post("/api/predict", async (req, res) => {
+  try {
+    const response = await axios.post(
+      `${process.env.ML_URL}/predict`,
+      req.body
+    );
+
+    res.json(response.data);
+  } catch (err) {
+    console.error("ML ERROR:", err.message);
+    res.status(500).json({
+      error: "ML service failed",
+      details: err.message
+    });
+  }
+});
+
+// ================= 404 =================
 app.use((_req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-// Error handler
+// ================= ERROR HANDLER =================
 app.use(errorHandler);
 
-// Graceful shutdown
+// ================= SERVER START =================
 let server;
 
 function shutdown(signal) {
@@ -72,7 +94,6 @@ function shutdown(signal) {
   }, 10000);
 }
 
-// Start server
 async function start() {
   try {
     // DB connection (safe)
@@ -83,7 +104,7 @@ async function start() {
       console.log("⚠️ DB failed, continuing without DB:", err.message);
     }
 
-    // Prevent multiple starts
+    // Start server
     if (!server) {
       server = app.listen(PORT, () => {
         console.log(`[Server] GraamSehat backend running on port ${PORT}`);
